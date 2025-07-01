@@ -214,35 +214,35 @@ server.tool(
   }
 );
 
-server.tool(
-  "detect_code_smells",
-  "Identify common code quality issues",
-  detectCodeSmellsSchema._def.shape(),
-  async (params) => {
-    try {
-      const validated = detectCodeSmellsSchema.parse(params);
-      const result = await detectCodeSmells(validated);
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result, null, 2)
-          }
-        ]
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`
-          }
-        ],
-        isError: true
-      };
-    }
-  }
-);
+// server.tool(
+//   "detect_code_smells",
+//   "Identify common code quality issues",
+//   detectCodeSmellsSchema._def.shape(),
+//   async (params) => {
+//     try {
+//       const validated = detectCodeSmellsSchema.parse(params);
+//       const result = await detectCodeSmells(validated);
+//       return {
+//         content: [
+//           {
+//             type: "text",
+//             text: JSON.stringify(result, null, 2)
+//           }
+//         ]
+//       };
+//     } catch (error) {
+//       return {
+//         content: [
+//           {
+//             type: "text",
+//             text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`
+//           }
+//         ],
+//         isError: true
+//       };
+//     }
+//   }
+// );
 
 server.tool(
   "extract_context",

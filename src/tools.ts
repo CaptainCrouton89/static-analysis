@@ -1018,24 +1018,14 @@ export async function getCompilationErrors(
   let filesToAnalyze: string[] = [];
 
   if (isDirectory) {
-    // Find all TypeScript files in the directory
     const files = await findFiles(params.filePattern, params.path);
-    
-    // Sort files by modification time (most recent first)
     const filesWithStats = await Promise.all(
       files.map(async (file) => {
         try {
           const stats = await fs.promises.stat(file);
-          return {
-            path: file,
-            mtime: stats.mtime
-          };
+          return { path: file, mtime: stats.mtime };
         } catch (error) {
-          // If we can't stat the file, give it a very old date
-          return {
-            path: file,
-            mtime: new Date(0)
-          };
+          return { path: file, mtime: new Date(0) };
         }
       })
     );
@@ -1043,38 +1033,28 @@ export async function getCompilationErrors(
     filesWithStats.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
     filesToAnalyze = filesWithStats.slice(0, params.maxFiles).map(f => f.path);
   } else {
-    // Single file
     validatePath(params.path);
     filesToAnalyze = [params.path];
   }
 
-  // Collect all diagnostics from all files
-  const allFileDiagnostics: Array<{
+  const errors: Array<{
     file: string;
-    diagnostics: Array<{
-      message: string;
-      severity: "error" | "warning" | "info";
-      location: Location;
-      code?: string;
-      context?: string;
-    }>;
+    message: string;
+    line: number;
+    code?: string;
+    context?: string;
   }> = [];
 
   let totalErrors = 0;
   let totalWarnings = 0;
-  let totalInfo = 0;
 
   await Promise.all(
     filesToAnalyze.map((filePath) =>
       limit(async () => {
         try {
-          // Add the source file to the project
           const sourceFile = project.addSourceFileAtPath(filePath);
-
-          // Get all diagnostics
           const allDiagnostics = sourceFile.getPreEmitDiagnostics();
 
-          // Filter diagnostics based on parameters
           const filteredDiagnostics = allDiagnostics.filter((diag) => {
             const severity = getDiagnosticSeverity(diag.getCategory());
             if (severity === "error") return true;
@@ -1083,103 +1063,51 @@ export async function getCompilationErrors(
             return false;
           });
 
-          if (filteredDiagnostics.length === 0) return;
+          filteredDiagnostics.forEach((diag) => {
+            const severity = getDiagnosticSeverity(diag.getCategory());
+            if (severity === "error") totalErrors++;
+            else if (severity === "warning") totalWarnings++;
 
-          // Map diagnostics to our format with context
-          const diagnostics = filteredDiagnostics.map((diag) => {
-            const lineNumber = diag.getLineNumber();
-            const start = diag.getStart();
-            const length = diag.getLength();
+            if (severity === "error" || params.verbosity !== "minimal") {
+              const lineNumber = diag.getLineNumber();
+              const start = diag.getStart();
+              const length = diag.getLength();
 
-            let context: string | undefined;
-            if (
-              lineNumber !== undefined &&
-              start !== undefined &&
-              length !== undefined
-            ) {
-              const lines = sourceFile.getFullText().split("\n");
-              const lineIndex = lineNumber - 1;
+              let context: string | undefined;
+              if (params.verbosity === "detailed" && lineNumber && start !== undefined && length !== undefined) {
+                const lines = sourceFile.getFullText().split("\n");
+                const lineIndex = lineNumber - 1;
+                const contextLines: string[] = [];
+                const startLine = Math.max(0, lineIndex - 1);
+                const endLine = Math.min(lines.length - 1, lineIndex + 1);
 
-              // Get 3 lines of context (1 before, the error line, 1 after)
-              const contextLines: string[] = [];
-              const startLine = Math.max(0, lineIndex - 1);
-              const endLine = Math.min(lines.length - 1, lineIndex + 1);
+                for (let i = startLine; i <= endLine; i++) {
+                  const prefix = i === lineIndex ? "> " : "  ";
+                  contextLines.push(`${prefix}${i + 1} | ${lines[i]}`);
+                }
 
-              for (let i = startLine; i <= endLine; i++) {
-                const prefix = i === lineIndex ? "> " : "  ";
-                contextLines.push(`${prefix}${i + 1} | ${lines[i]}`);
+                if (lineIndex === lineNumber - 1) {
+                  const column = sourceFile.getLineAndColumnAtPos(start).column - 1;
+                  const indicator = "  " + " ".repeat(String(lineNumber).length + 3 + column) + "^".repeat(Math.min(length, lines[lineIndex].length - column));
+                  contextLines.push(indicator);
+                }
+
+                context = contextLines.join("\n");
               }
 
-              // Add error indicator
-              if (lineIndex === lineNumber - 1) {
-                const column =
-                  sourceFile.getLineAndColumnAtPos(start).column - 1;
-                const indicator =
-                  "  " +
-                  " ".repeat(String(lineNumber).length + 3 + column) +
-                  "^".repeat(
-                    Math.min(length, lines[lineIndex].length - column)
-                  );
-                contextLines.push(indicator);
-              }
+              const messageText = diag.getMessageText();
+              const message = typeof messageText === "string" 
+                ? messageText 
+                : messageText.getMessageText?.() || messageText.toString();
 
-              context = contextLines.join("\n");
+              errors.push({
+                file: path.relative(projectRoot, filePath),
+                message,
+                line: lineNumber || 0,
+                code: diag.getCode()?.toString(),
+                context: params.verbosity === "detailed" ? context : undefined,
+              });
             }
-
-            const messageText = diag.getMessageText();
-            const message =
-              typeof messageText === "string"
-                ? messageText
-                : messageText.getMessageText
-                ? messageText.getMessageText()
-                : messageText.toString();
-
-            return {
-              message,
-              severity: getDiagnosticSeverity(diag.getCategory()),
-              location: {
-                file: sourceFile.getFilePath(),
-                position: {
-                  line: lineNumber ? lineNumber - 1 : 0,
-                  character: start
-                    ? sourceFile.getLineAndColumnAtPos(start).column - 1
-                    : 0,
-                },
-                endPosition:
-                  start !== undefined && length !== undefined
-                    ? {
-                        line:
-                          sourceFile.getLineAndColumnAtPos(start + length)
-                            .line - 1,
-                        character:
-                          sourceFile.getLineAndColumnAtPos(start + length)
-                            .column - 1,
-                      }
-                    : undefined,
-              },
-              code: diag.getCode()?.toString(),
-              context,
-            };
-          });
-
-          // Count by severity for this file
-          const errorCount = diagnostics.filter(
-            (d) => d.severity === "error"
-          ).length;
-          const warningCount = diagnostics.filter(
-            (d) => d.severity === "warning"
-          ).length;
-          const infoCount = diagnostics.filter(
-            (d) => d.severity === "info"
-          ).length;
-
-          totalErrors += errorCount;
-          totalWarnings += warningCount;
-          totalInfo += infoCount;
-
-          allFileDiagnostics.push({
-            file: filePath,
-            diagnostics,
           });
         } catch (error) {
           console.error(`Error analyzing ${filePath}:`, error);
@@ -1188,30 +1116,43 @@ export async function getCompilationErrors(
     )
   );
 
-  // Sort files by number of errors (descending)
-  allFileDiagnostics.sort((a, b) => {
-    const aErrors = a.diagnostics.filter((d) => d.severity === "error").length;
-    const bErrors = b.diagnostics.filter((d) => d.severity === "error").length;
-    return bErrors - aErrors;
+  // Early return for no errors case
+  if (totalErrors === 0 && params.verbosity === "minimal") {
+    return {
+      hasErrors: false,
+      totalErrors: 0,
+      totalWarnings,
+    };
+  }
+
+  if (totalErrors === 0 && totalWarnings === 0) {
+    return {
+      hasErrors: false,
+      totalErrors: 0,
+      totalWarnings: 0,
+      filesAnalyzed: filesToAnalyze.length,
+    };
+  }
+
+  // Sort errors by severity and file
+  errors.sort((a, b) => {
+    if (a.file !== b.file) return a.file.localeCompare(b.file);
+    return a.line - b.line;
   });
 
-  return {
-    path: params.path,
-    isDirectory,
-    filesAnalyzed: filesToAnalyze.length,
-    fileResults: allFileDiagnostics,
-    summary: {
-      totalErrors,
-      totalWarnings,
-      totalInfo,
-      hasErrors: totalErrors > 0,
-      fileCount: allFileDiagnostics.length,
-      filesWithErrors: allFileDiagnostics.filter((f) =>
-        f.diagnostics.some((d) => d.severity === "error")
-      ).length,
-    },
-    analysisTimeMs: Date.now() - startTime,
+  const result: any = {
+    hasErrors: totalErrors > 0,
+    totalErrors,
+    totalWarnings,
+    errors: errors.slice(0, params.verbosity === "minimal" ? 5 : errors.length),
   };
+
+  if (params.verbosity !== "minimal") {
+    result.filesAnalyzed = filesToAnalyze.length;
+    result.analysisTimeMs = Date.now() - startTime;
+  }
+
+  return result;
 }
 
 function getDiagnosticSeverity(

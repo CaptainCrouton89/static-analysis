@@ -174,7 +174,8 @@ export const getCompilationErrorsSchema = z.object({
   includeWarnings: z.boolean().optional().default(true),
   includeInfo: z.boolean().optional().default(false),
   filePattern: z.string().optional().default("**/*.{ts,tsx}"),
-  maxFiles: z.number().optional().default(1000),
+  maxFiles: z.number().optional().default(25),
+  verbosity: z.enum(["minimal", "normal", "detailed"]).optional().default("normal"),
 });
 
 // Tool implementations
@@ -1019,7 +1020,28 @@ export async function getCompilationErrors(
   if (isDirectory) {
     // Find all TypeScript files in the directory
     const files = await findFiles(params.filePattern, params.path);
-    filesToAnalyze = files.slice(0, params.maxFiles);
+    
+    // Sort files by modification time (most recent first)
+    const filesWithStats = await Promise.all(
+      files.map(async (file) => {
+        try {
+          const stats = await fs.promises.stat(file);
+          return {
+            path: file,
+            mtime: stats.mtime
+          };
+        } catch (error) {
+          // If we can't stat the file, give it a very old date
+          return {
+            path: file,
+            mtime: new Date(0)
+          };
+        }
+      })
+    );
+    
+    filesWithStats.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+    filesToAnalyze = filesWithStats.slice(0, params.maxFiles).map(f => f.path);
   } else {
     // Single file
     validatePath(params.path);

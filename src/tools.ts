@@ -71,12 +71,37 @@ export async function analyzeFile(params: z.infer<typeof analyzeFileSchema>) {
 
   const result = analyzeSourceFile(sourceFile, params.analysisType, 1, false);
 
-  return {
-    symbols: result.symbols,
-    imports: result.imports,
-    exports: result.exports,
-    diagnostics: result.diagnostics,
-  };
+  const lines = [`## ${path.relative(process.cwd(), params.filePath)}`];
+  
+  if (result.symbols.length > 0) {
+    lines.push(`\n**Symbols (${result.symbols.length}):**`);
+    result.symbols.forEach(sym => {
+      lines.push(`- \`${sym.name}\` (${sym.kind}) - line ${sym.location.line + 1}`);
+    });
+  }
+  
+  if (result.imports.length > 0) {
+    lines.push(`\n**Imports (${result.imports.length}):**`);
+    result.imports.forEach(imp => {
+      lines.push(`- \`${imp.moduleSpecifier}\` - ${imp.symbols.join(', ')}`);
+    });
+  }
+  
+  if (result.exports.length > 0) {
+    lines.push(`\n**Exports (${result.exports.length}):**`);
+    result.exports.forEach(exp => {
+      lines.push(`- \`${exp}\``);
+    });
+  }
+  
+  if (result.diagnostics.length > 0) {
+    lines.push(`\n**Issues (${result.diagnostics.length}):**`);
+    result.diagnostics.forEach(diag => {
+      lines.push(`- ${diag.severity}: ${diag.message}`);
+    });
+  }
+  
+  return lines.join('\n');
 }
 
 export async function findReferences(
@@ -194,11 +219,17 @@ export async function findReferences(
 
   const symbolInfo = extractSymbolInfo(node, false);
 
-  return {
-    references: references.slice(0, params.maxResults),
-    symbol: symbolInfo!,
-    totalReferences: references.length,
-  };
+  const limitedReferences = references.slice(0, params.maxResults);
+  
+  const lines = [
+    `## ${symbolInfo!.name} References (${references.length})`
+  ];
+  
+  limitedReferences.forEach(ref => {
+    lines.push(`- \`${path.relative(process.cwd(), ref.location.file)}:${ref.location.position.line + 1}\` ${ref.kind}`);
+  });
+  
+  return lines.join('\n');
 }
 
 export async function findReferencesBySymbol(
@@ -359,6 +390,7 @@ export async function getCompilationErrors(
     line: number;
     code?: string;
     context?: string;
+    severity: "error" | "warning" | "info";
   }> = [];
 
   let totalErrors = 0;
@@ -428,12 +460,14 @@ export async function getCompilationErrors(
                   ? messageText
                   : messageText.getMessageText?.() || messageText.toString();
 
+              const severity = getDiagnosticSeverity(diag.getCategory());
               errors.push({
                 file: path.relative(projectRoot, filePath),
                 message,
                 line: lineNumber || 0,
                 code: diag.getCode()?.toString(),
                 context: params.verbosity === "detailed" ? context : undefined,
+                severity,
               });
             }
           });
@@ -468,19 +502,27 @@ export async function getCompilationErrors(
     return a.line - b.line;
   });
 
-  const result: any = {
-    hasErrors: totalErrors > 0,
-    totalErrors,
-    totalWarnings,
-    errors: errors.slice(0, params.verbosity === "minimal" ? 5 : errors.length),
-  };
-
-  if (params.verbosity !== "minimal") {
-    result.filesAnalyzed = filesToAnalyze.length;
-    result.analysisTimeMs = Date.now() - startTime;
+  const limitedErrors = errors.slice(0, params.verbosity === "minimal" ? 5 : errors.length);
+  
+  const lines = [`## Compilation Analysis`];
+  lines.push(`**${totalErrors}** errors, **${totalWarnings}** warnings in **${filesToAnalyze.length}** files`);
+  
+  if (limitedErrors.length > 0) {
+    lines.push('\n**Issues:**');
+    limitedErrors.forEach(err => {
+      lines.push(`- ${err.severity}: \`${path.relative(process.cwd(), err.file)}:${err.line}\` - ${err.message}`);
+    });
+    
+    if (errors.length > limitedErrors.length) {
+      lines.push(`\n*... and ${errors.length - limitedErrors.length} more issues*`);
+    }
   }
-
-  return result;
+  
+  if (params.verbosity !== "minimal") {
+    lines.push(`\n*Analysis completed in ${Date.now() - startTime}ms*`);
+  }
+  
+  return lines.join('\n');
 }
 
 function getDiagnosticSeverity(

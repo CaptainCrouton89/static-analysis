@@ -5,10 +5,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   analyzeFile,
   analyzeFileSchema,
-  findReferences,
   findReferencesBySymbol,
   findReferencesBySymbolSchema,
-  findReferencesSchema,
   getCompilationErrors,
   getCompilationErrorsSchema,
 } from "./tools.js";
@@ -23,7 +21,7 @@ const server = new McpServer({
 // Register tools
 server.tool(
   "analyze_file",
-  "Analyze a single TypeScript file with configurable depth and detail",
+  "Analyze a single TypeScript and get all symbols, imports, and exports. The best way to quickly understand a file using minimal context.",
   analyzeFileSchema._def.shape(),
   async (params) => {
     try {
@@ -33,7 +31,10 @@ server.tool(
         content: [
           {
             type: "text",
-            text: JSON.stringify(result, null, 2),
+            text:
+              typeof result === "string"
+                ? result
+                : JSON.stringify(result, null, 2),
           },
         ],
       };
@@ -55,39 +56,7 @@ server.tool(
 
 server.tool(
   "find_references",
-  "Find all references to a symbol",
-  findReferencesSchema._def.shape(),
-  async (params) => {
-    try {
-      const validated = findReferencesSchema.parse(params);
-      const result = await findReferences(validated);
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result, null, 2),
-          },
-        ],
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error: ${
-              error instanceof Error ? error.message : "Unknown error"
-            }`,
-          },
-        ],
-        isError: true,
-      };
-    }
-  }
-);
-
-server.tool(
-  "find_references_by_symbol",
-  "Find all references to a symbol using stable symbol identifier",
+  "Find all references to a symbol using stable symbol identifier. Use this for perfect accuracy when searching for usage, imports, and declarations of a symbol. This is the most accurate way to find references to a symbol and understand its usage across the codebase.",
   findReferencesBySymbolSchema._def.shape(),
   async (params) => {
     try {
@@ -119,7 +88,7 @@ server.tool(
 
 server.tool(
   "get_compilation_errors",
-  "Get TypeScript compilation errors for a file or directory",
+  "Get TypeScript compilation errors for a file or directory. Use this instead of building the project to get errors.",
   getCompilationErrorsSchema._def.shape(),
   async (params) => {
     try {
@@ -129,7 +98,10 @@ server.tool(
         content: [
           {
             type: "text",
-            text: JSON.stringify(result, null, 2),
+            text:
+              typeof result === "string"
+                ? result
+                : JSON.stringify(result, null, 2),
           },
         ],
       };

@@ -5,31 +5,19 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   analyzeFile,
   analyzeFileSchema,
-  searchSymbols,
-  searchSymbolsSchema,
-  getSymbolInfo,
-  getSymbolInfoSchema,
   findReferences,
+  findReferencesBySymbol,
+  findReferencesBySymbolSchema,
   findReferencesSchema,
-  analyzeDependencies,
-  analyzeDependenciesSchema,
-  findPatterns,
-  findPatternsSchema,
-  detectCodeSmells,
-  detectCodeSmellsSchema,
-  extractContext,
-  extractContextSchema,
-  summarizeCodebase,
-  summarizeCodebaseSchema,
   getCompilationErrors,
-  getCompilationErrorsSchema
+  getCompilationErrorsSchema,
 } from "./tools.js";
 
 // Create the MCP server
 const server = new McpServer({
   name: "typescript-analyzer",
   version: "1.0.0",
-  description: "TypeScript code analysis MCP server using ts-morph"
+  description: "TypeScript code analysis MCP server using ts-morph",
 });
 
 // Register tools
@@ -45,79 +33,21 @@ server.tool(
         content: [
           {
             type: "text",
-            text: JSON.stringify(result, null, 2)
-          }
-        ]
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
       };
     } catch (error) {
       return {
         content: [
           {
             type: "text",
-            text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`
-          }
+            text: `Error: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`,
+          },
         ],
-        isError: true
-      };
-    }
-  }
-);
-
-server.tool(
-  "search_symbols",
-  "Search for symbols across the codebase using various strategies",
-  searchSymbolsSchema._def.shape(),
-  async (params) => {
-    try {
-      const validated = searchSymbolsSchema.parse(params);
-      const result = await searchSymbols(validated);
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result, null, 2)
-          }
-        ]
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`
-          }
-        ],
-        isError: true
-      };
-    }
-  }
-);
-
-server.tool(
-  "get_symbol_info",
-  "Get detailed information about a specific symbol",
-  getSymbolInfoSchema._def.shape(),
-  async (params) => {
-    try {
-      const validated = getSymbolInfoSchema.parse(params);
-      const result = await getSymbolInfo(validated);
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result, null, 2)
-          }
-        ]
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`
-          }
-        ],
-        isError: true
+        isError: true,
       };
     }
   }
@@ -135,170 +65,53 @@ server.tool(
         content: [
           {
             type: "text",
-            text: JSON.stringify(result, null, 2)
-          }
-        ]
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
       };
     } catch (error) {
       return {
         content: [
           {
             type: "text",
-            text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`
-          }
+            text: `Error: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`,
+          },
         ],
-        isError: true
+        isError: true,
       };
     }
   }
 );
 
 server.tool(
-  "analyze_dependencies",
-  "Analyze import/export dependencies",
-  analyzeDependenciesSchema._def.shape(),
+  "find_references_by_symbol",
+  "Find all references to a symbol using stable symbol identifier",
+  findReferencesBySymbolSchema._def.shape(),
   async (params) => {
     try {
-      const validated = analyzeDependenciesSchema.parse(params);
-      const result = await analyzeDependencies(validated);
+      const validated = findReferencesBySymbolSchema.parse(params);
+      const result = await findReferencesBySymbol(validated);
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(result, null, 2)
-          }
-        ]
+            text: result,
+          },
+        ],
       };
     } catch (error) {
       return {
         content: [
           {
             type: "text",
-            text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`
-          }
+            text: `Error: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`,
+          },
         ],
-        isError: true
-      };
-    }
-  }
-);
-
-
-server.tool(
-  "find_patterns",
-  "Search for code patterns using AST matching",
-  findPatternsSchema._def.shape(),
-  async (params) => {
-    try {
-      const validated = findPatternsSchema.parse(params);
-      const result = await findPatterns(validated);
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result, null, 2)
-          }
-        ]
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`
-          }
-        ],
-        isError: true
-      };
-    }
-  }
-);
-
-// server.tool(
-//   "detect_code_smells",
-//   "Identify common code quality issues",
-//   detectCodeSmellsSchema._def.shape(),
-//   async (params) => {
-//     try {
-//       const validated = detectCodeSmellsSchema.parse(params);
-//       const result = await detectCodeSmells(validated);
-//       return {
-//         content: [
-//           {
-//             type: "text",
-//             text: JSON.stringify(result, null, 2)
-//           }
-//         ]
-//       };
-//     } catch (error) {
-//       return {
-//         content: [
-//           {
-//             type: "text",
-//             text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`
-//           }
-//         ],
-//         isError: true
-//       };
-//     }
-//   }
-// );
-
-server.tool(
-  "extract_context",
-  "Extract relevant context for AI understanding",
-  extractContextSchema._def.shape(),
-  async (params) => {
-    try {
-      const validated = extractContextSchema.parse(params);
-      const result = await extractContext(validated);
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result, null, 2)
-          }
-        ]
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`
-          }
-        ],
-        isError: true
-      };
-    }
-  }
-);
-
-server.tool(
-  "summarize_codebase",
-  "Generate high-level codebase summary",
-  summarizeCodebaseSchema._def.shape(),
-  async (params) => {
-    try {
-      const validated = summarizeCodebaseSchema.parse(params);
-      const result = await summarizeCodebase(validated);
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify(result, null, 2)
-          }
-        ]
-      };
-    } catch (error) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`
-          }
-        ],
-        isError: true
+        isError: true,
       };
     }
   }
@@ -316,19 +129,21 @@ server.tool(
         content: [
           {
             type: "text",
-            text: JSON.stringify(result, null, 2)
-          }
-        ]
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
       };
     } catch (error) {
       return {
         content: [
           {
             type: "text",
-            text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`
-          }
+            text: `Error: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`,
+          },
         ],
-        isError: true
+        isError: true,
       };
     }
   }

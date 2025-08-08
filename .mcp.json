@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "static-analysis": {
+      "command": "node",
+      "args": [
+        "/Users/silasrhyneer/Code/MCP/static-analysis/dist/index.js"
+      ]
+    }
+  }
+}

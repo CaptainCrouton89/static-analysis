@@ -57,13 +57,17 @@ export function extractSymbolInfo(node: Node, includePrivate: boolean = false): 
     `@${tag.getName()}${tag.getText() ? ` ${tag.getText()}` : ""}`
   ).join("\n");
   
+  const location = nodeToLocation(node);
   return {
     name,
     kind,
     type: getTypeString(type),
+    location: {
+      file: location.file,
+      line: location.position.line
+    },
     documentation: documentation || undefined,
     modifiers: modifiers.length > 0 ? modifiers : undefined,
-    location: nodeToLocation(node),
     relationships: extractRelationships(node)
   };
 }
@@ -79,7 +83,6 @@ function extractRelationships(node: Node): SymbolInfo["relationships"] | undefin
       if (extendsNodes.length > 0) {
         relationships.extends = extendsNodes.map(expr => ({
           name: expr.getText(),
-          location: nodeToLocation(expr),
           kind: "class" as const
         }));
       }
@@ -90,7 +93,6 @@ function extractRelationships(node: Node): SymbolInfo["relationships"] | undefin
       if (implementsNodes.length > 0) {
         relationships.implements = implementsNodes.map(expr => ({
           name: expr.getText(),
-          location: nodeToLocation(expr),
           kind: "interface" as const
         }));
       }
@@ -102,7 +104,7 @@ function extractRelationships(node: Node): SymbolInfo["relationships"] | undefin
 
 export function analyzeSourceFile(
   sourceFile: SourceFile,
-  analysisType: "symbols" | "dependencies" | "complexity" | "all",
+  analysisType: "symbols" | "dependencies" | "all",
   depth: number = 2,
   includePrivate: boolean = false
 ): {
@@ -110,12 +112,10 @@ export function analyzeSourceFile(
   diagnostics: Diagnostic[];
   imports: ImportInfo[];
   exports: string[];
-  complexity: number;
 } {
   const symbols: SymbolInfo[] = [];
   const imports: ImportInfo[] = [];
   const exports: string[] = [];
-  let totalComplexity = 0;
   
   if (analysisType === "symbols" || analysisType === "all") {
     sourceFile.forEachDescendant(node => {
@@ -145,8 +145,7 @@ export function analyzeSourceFile(
         imports.push({
           moduleSpecifier,
           symbols: allImports,
-          isTypeOnly: importDecl.isTypeOnly(),
-          location: nodeToLocation(importDecl)
+          isTypeOnly: importDecl.isTypeOnly()
         });
       }
     });
@@ -161,28 +160,10 @@ export function analyzeSourceFile(
     });
   }
   
-  if (analysisType === "complexity" || analysisType === "all") {
-    sourceFile.getFunctions().forEach(func => {
-      totalComplexity += getNodeComplexity(func);
-    });
-    
-    sourceFile.getClasses().forEach(cls => {
-      cls.getMethods().forEach(method => {
-        totalComplexity += getNodeComplexity(method);
-      });
-    });
-  }
   
   const diagnostics = sourceFile.getPreEmitDiagnostics().map(diag => ({
     message: diag.getMessageText().toString(),
     severity: getDiagnosticSeverity(diag.getCategory()),
-    location: {
-      file: sourceFile.getFilePath(),
-      position: {
-        line: diag.getLineNumber() ? diag.getLineNumber()! - 1 : 0,
-        character: diag.getStart() ? sourceFile.getLineAndColumnAtPos(diag.getStart()!).column - 1 : 0
-      }
-    },
     code: diag.getCode()?.toString()
   }));
   
@@ -190,8 +171,7 @@ export function analyzeSourceFile(
     symbols,
     diagnostics,
     imports,
-    exports,
-    complexity: totalComplexity
+    exports
   };
 }
 
@@ -225,6 +205,53 @@ export function findSymbolAtPosition(
 ): Node | undefined {
   const offset = positionToOffset(sourceFile, position);
   return sourceFile.getDescendantAtPos(offset);
+}
+
+export function findSymbolOnLine(
+  sourceFile: SourceFile,
+  line: number,
+  maxSearchAttempts: number = 3
+): Node | undefined {
+  const lines = sourceFile.getFullText().split("\n");
+  
+  // Try the specified line first, then expand search
+  for (let attempt = 0; attempt < maxSearchAttempts; attempt++) {
+    const searchLines: number[] = [];
+    
+    if (attempt === 0) {
+      // First attempt: only the specified line
+      searchLines.push(line);
+    } else {
+      // Subsequent attempts: expand radius
+      for (let offset = -attempt; offset <= attempt; offset++) {
+        const searchLine = line + offset;
+        if (searchLine >= 0 && searchLine < lines.length && !searchLines.includes(searchLine)) {
+          searchLines.push(searchLine);
+        }
+      }
+    }
+    
+    for (const searchLine of searchLines) {
+      const lineText = lines[searchLine];
+      if (!lineText || lineText.trim().length === 0) continue;
+      
+      // Find all identifiers on this line by looking for word characters
+      const identifierMatches = Array.from(lineText.matchAll(/\b[a-zA-Z_$][a-zA-Z0-9_$]*\b/g));
+      
+      for (const match of identifierMatches) {
+        if (match.index !== undefined) {
+          const position = { line: searchLine, character: match.index };
+          const node = findSymbolAtPosition(sourceFile, position);
+          
+          if (node && node.getSymbol()) {
+            return node;
+          }
+        }
+      }
+    }
+  }
+  
+  return undefined;
 }
 
 export function getTypeHierarchy(

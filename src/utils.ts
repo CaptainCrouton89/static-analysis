@@ -107,7 +107,8 @@ export function nodeToLocation(node: Node): Location {
 }
 
 export function positionToOffset(sourceFile: SourceFile, position: Position): number {
-  const pos = sourceFile.compilerNode.getPositionOfLineAndCharacter(position.line, position.character);
+  const character = position.character ?? 0;
+  const pos = sourceFile.compilerNode.getPositionOfLineAndCharacter(position.line, character);
   return pos;
 }
 

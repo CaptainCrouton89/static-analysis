@@ -1,6 +1,12 @@
 export interface Position {
   line: number;
-  character: number;
+  character?: number;
+}
+
+export interface SymbolIdentifier {
+  filePath: string;
+  symbolName: string;
+  line: number;
 }
 
 export interface Location {
@@ -24,7 +30,6 @@ export type SymbolKind =
 
 export interface SymbolReference {
   name: string;
-  location: Location;
   kind: SymbolKind;
 }
 
@@ -32,9 +37,12 @@ export interface SymbolInfo {
   name: string;
   kind: SymbolKind;
   type: string;
+  location: {
+    file: string;
+    line: number;
+  };
   documentation?: string;
   modifiers?: string[];
-  location: Location;
   relationships?: {
     extends?: SymbolReference[];
     implements?: SymbolReference[];
@@ -46,7 +54,6 @@ export interface SymbolInfo {
 export interface Diagnostic {
   message: string;
   severity: "error" | "warning" | "info";
-  location: Location;
   code?: string;
 }
 
@@ -60,7 +67,6 @@ export interface ImportInfo {
   moduleSpecifier: string;
   symbols: string[];
   isTypeOnly: boolean;
-  location: Location;
 }
 
 export interface TypeDefinition {
@@ -131,6 +137,10 @@ export class AnalysisError extends Error {
     file?: string;
     position?: Position;
     suggestion?: string;
+    symbolName?: string;
+    line?: number;
+    expected?: string;
+    found?: string;
   };
 
   constructor(data: {
@@ -140,6 +150,10 @@ export class AnalysisError extends Error {
       file?: string;
       position?: Position;
       suggestion?: string;
+      symbolName?: string;
+      line?: number;
+      expected?: string;
+      found?: string;
     };
   }) {
     super(data.message);

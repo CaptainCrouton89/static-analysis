@@ -415,3 +415,172 @@ export function extractMembers(node: Node): MemberInfo[] {
   
   return members;
 }
+
+export function analyzeSymbolDeclaration(node: Node, maxTypeLength: number = Number.MAX_SAFE_INTEGER): {
+  name: string;
+  kind: string;
+  type: string;
+  location: Location;
+  parameters?: Array<{
+    name: string;
+    type: string;
+    optional: boolean;
+    defaultValue?: string;
+  }>;
+  returnType?: string;
+  members?: Array<{
+    name: string;
+    type: string;
+    kind: "property" | "method" | "getter" | "setter";
+    visibility: "public" | "private" | "protected";
+    static: boolean;
+    optional: boolean;
+  }>;
+  generics?: string[];
+  signature?: string;
+} | null {
+  const symbol = node.getSymbol();
+  if (!symbol) return null;
+  
+  const name = symbol.getName();
+  const kind = getSymbolKind(node);
+  const type = node.getType();
+  const location = nodeToLocation(node);
+  
+  const result: {
+    name: string;
+    kind: string;
+    type: string;
+    location: Location;
+    parameters?: Array<{
+      name: string;
+      type: string;
+      optional: boolean;
+      defaultValue?: string;
+    }>;
+    returnType?: string;
+    members?: Array<{
+      name: string;
+      type: string;
+      kind: "property" | "method" | "getter" | "setter";
+      visibility: "public" | "private" | "protected";
+      static: boolean;
+      optional: boolean;
+    }>;
+    generics?: string[];
+    signature?: string;
+  } = {
+    name,
+    kind,
+    type: getTypeString(type, maxTypeLength),
+    location
+  };
+  
+  // Extract function/method parameters
+  if (Node.isFunctionDeclaration(node) || Node.isMethodDeclaration(node) || Node.isArrowFunction(node)) {
+    const params = node.getParameters();
+    result.parameters = params.map(param => ({
+      name: param.getName(),
+      type: getTypeString(param.getType(), maxTypeLength),
+      optional: param.hasQuestionToken(),
+      defaultValue: param.getInitializer()?.getText()
+    }));
+    
+    const returnType = node.getReturnType();
+    result.returnType = getTypeString(returnType, maxTypeLength);
+    
+    result.signature = node.getText();
+  }
+  
+  // Extract class/interface members
+  if (Node.isClassDeclaration(node) || Node.isInterfaceDeclaration(node)) {
+    result.members = [];
+    
+    // Get properties
+    node.getProperties().forEach(prop => {
+      const propType = prop.getType();
+      result.members!.push({
+        name: prop.getName(),
+        type: getTypeString(propType, maxTypeLength),
+        kind: "property",
+        visibility: getVisibility(prop),
+        static: prop.hasModifier(SyntaxKind.StaticKeyword),
+        optional: prop.hasQuestionToken()
+      });
+    });
+    
+    // Get methods
+    node.getMethods().forEach(method => {
+      const methodType = method.getType();
+      const isStatic = Node.isMethodDeclaration(method) ? method.hasModifier(SyntaxKind.StaticKeyword) : false;
+      result.members!.push({
+        name: method.getName(),
+        type: getTypeString(methodType, maxTypeLength),
+        kind: "method",
+        visibility: getVisibility(method),
+        static: isStatic,
+        optional: false
+      });
+    });
+    
+    // Get getters/setters
+    node.getGetAccessors().forEach(getter => {
+      const getterType = getter.getType();
+      result.members!.push({
+        name: getter.getName(),
+        type: getTypeString(getterType, maxTypeLength),
+        kind: "getter",
+        visibility: getVisibility(getter),
+        static: getter.hasModifier(SyntaxKind.StaticKeyword),
+        optional: false
+      });
+    });
+    
+    node.getSetAccessors().forEach(setter => {
+      const setterType = setter.getType();
+      result.members!.push({
+        name: setter.getName(),
+        type: getTypeString(setterType, maxTypeLength),
+        kind: "setter",
+        visibility: getVisibility(setter),
+        static: setter.hasModifier(SyntaxKind.StaticKeyword),
+        optional: false
+      });
+    });
+  }
+  
+  // Extract generics
+  if (Node.isTypeParametered(node)) {
+    const typeParams = node.getTypeParameters();
+    if (typeParams.length > 0) {
+      result.generics = typeParams.map(tp => tp.getName());
+    }
+  }
+  
+  // Extract enum members
+  if (Node.isEnumDeclaration(node)) {
+    result.members = node.getMembers().map(member => ({
+      name: member.getName(),
+      type: getTypeString(member.getType(), maxTypeLength),
+      kind: "property" as const,
+      visibility: "public" as const,
+      static: false,
+      optional: false
+    }));
+  }
+  
+  // Extract type alias details
+  if (Node.isTypeAliasDeclaration(node)) {
+    result.signature = node.getText();
+  }
+  
+  return result;
+}
+
+function getVisibility(node: Node): "public" | "private" | "protected" {
+  if (Node.isModifierable(node)) {
+    if (node.hasModifier(SyntaxKind.PrivateKeyword)) return "private";
+    if (node.hasModifier(SyntaxKind.ProtectedKeyword)) return "protected";
+  }
+  return "public";
+}

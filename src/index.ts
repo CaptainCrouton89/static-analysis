@@ -5,6 +5,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   analyzeFile,
   analyzeFileSchema,
+  analyzeSymbol,
+  analyzeSymbolSchema,
   findReferencesBySymbol,
   findReferencesBySymbolSchema,
   getCompilationErrors,
@@ -35,6 +37,38 @@ server.tool(
               typeof result === "string"
                 ? result
                 : JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`,
+          },
+        ],
+        isError: true,
+      };
+    }
+  }
+);
+
+server.tool(
+  "analyze_symbol",
+  "Get detailed symbol analysis including declaration, parameters, return types, and members for functions, classes, interfaces, and types. Perfect for understanding symbol signatures from 3rd party libraries.",
+  analyzeSymbolSchema._def.shape(),
+  async (params) => {
+    try {
+      const validated = analyzeSymbolSchema.parse(params);
+      const result = await analyzeSymbol(validated);
+      return {
+        content: [
+          {
+            type: "text",
+            text: result,
           },
         ],
       };

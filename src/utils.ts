@@ -301,10 +301,10 @@ export function getNodeComplexity(node: Node): number {
   return complexity;
 }
 
-export function getTypeString(type: Type): string {
+export function getTypeString(type: Type, maxLength: number = 500): string {
   const typeText = type.getText();
-  if (typeText.length > 100) {
-    return typeText.substring(0, 97) + "...";
+  if (typeText.length > maxLength) {
+    return typeText.substring(0, maxLength - 3) + "...";
   }
   return typeText;
 }

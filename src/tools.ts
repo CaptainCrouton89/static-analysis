@@ -7,6 +7,7 @@ import {
   extractSymbolInfo,
   findSymbolAtPosition,
   findSymbolOnLine,
+  analyzeSymbolDeclaration,
 } from "./analyzer.js";
 import { AnalysisError, ErrorCode, Location } from "./types.js";
 import {
@@ -38,7 +39,6 @@ export const findReferencesSchema = z.object({
     character: z.number().optional(),
   }),
   includeDeclaration: z.boolean().optional().default(false),
-  includeDefinition: z.boolean().optional().default(false),
   scope: z.enum(["file", "project"]).optional().default("project"),
   maxResults: z.number().optional().default(100),
 });
@@ -49,8 +49,16 @@ export const findReferencesBySymbolSchema = z.object({
     symbolName: z.string(),
     line: z.number(),
   }),
-  includeDefinition: z.boolean().optional().default(false),
   maxResults: z.number().optional().default(100),
+});
+
+export const analyzeSymbolSchema = z.object({
+  symbolIdentifier: z.object({
+    filePath: z.string(),
+    symbolName: z.string(),
+    line: z.number(),
+  }),
+  maxTypeLength: z.number().optional().default(Number.MAX_SAFE_INTEGER),
 });
 
 export const getCompilationErrorsSchema = z.object({
@@ -117,10 +125,10 @@ export async function analyzeFile(params: z.infer<typeof analyzeFileSchema>) {
 export async function findReferences(
   params: z.infer<typeof findReferencesSchema>
 ) {
-  validatePath(params.filePath, params.includeDefinition);
+  validatePath(params.filePath);
 
   const projectRoot = findProjectRoot(params.filePath);
-  const project = createProject(projectRoot, params.includeDefinition);
+  const project = createProject(projectRoot);
   const sourceFile = project.addSourceFileAtPath(params.filePath);
   
   let node: Node | undefined;
@@ -228,7 +236,7 @@ export async function findReferences(
     }
   }
 
-  const symbolInfo = extractSymbolInfo(node, false, params.includeDefinition);
+  const symbolInfo = extractSymbolInfo(node, false, false);
 
   const limitedReferences = references.slice(0, params.maxResults);
   
@@ -247,10 +255,10 @@ export async function findReferencesBySymbol(
   params: z.infer<typeof findReferencesBySymbolSchema>
 ) {
   const { symbolIdentifier } = params;
-  validatePath(symbolIdentifier.filePath, params.includeDefinition);
+  validatePath(symbolIdentifier.filePath);
 
   const projectRoot = findProjectRoot(symbolIdentifier.filePath);
-  const project = createProject(projectRoot, params.includeDefinition);
+  const project = createProject(projectRoot);
   const sourceFile = project.addSourceFileAtPath(symbolIdentifier.filePath);
 
   // Find the symbol by name at the specified line (convert to 0-based indexing)
@@ -342,7 +350,7 @@ export async function findReferencesBySymbol(
     });
   }
 
-  const symbolInfo = extractSymbolInfo(node, false, params.includeDefinition);
+  const symbolInfo = extractSymbolInfo(node, false, false);
 
   const limitedReferences = references.slice(0, params.maxResults);
   
@@ -355,6 +363,136 @@ export async function findReferencesBySymbol(
     lines.push(`- \`${ref.location.file}:${ref.location.line}\` ${ref.kind}`);
   });
   
+  return lines.join('\n');
+}
+
+export async function analyzeSymbol(
+  params: z.infer<typeof analyzeSymbolSchema>
+) {
+  const { symbolIdentifier } = params;
+  validatePath(symbolIdentifier.filePath);
+
+  const projectRoot = findProjectRoot(symbolIdentifier.filePath);
+  const project = createProject(projectRoot, true); // Enable definition lookup
+  const sourceFile = project.addSourceFileAtPath(symbolIdentifier.filePath);
+
+  // Find the symbol by name at the specified line (convert to 0-based indexing)
+  const line = sourceFile.getFullText().split("\n")[symbolIdentifier.line - 1];
+  const symbolIndex = line.indexOf(symbolIdentifier.symbolName);
+
+  if (symbolIndex === -1) {
+    throw new AnalysisError({
+      code: ErrorCode.FILE_NOT_FOUND,
+      message: `Symbol '${symbolIdentifier.symbolName}' not found at line ${symbolIdentifier.line}`,
+      details: {
+        file: symbolIdentifier.filePath,
+        symbolName: symbolIdentifier.symbolName,
+        line: symbolIdentifier.line,
+      },
+    });
+  }
+
+  const position = { line: symbolIdentifier.line - 1, character: symbolIndex };
+  const node = findSymbolAtPosition(sourceFile, position);
+
+  if (!node) {
+    throw new AnalysisError({
+      code: ErrorCode.FILE_NOT_FOUND,
+      message: "No symbol found at calculated position",
+      details: {
+        file: symbolIdentifier.filePath,
+        position,
+        symbolName: symbolIdentifier.symbolName,
+      },
+    });
+  }
+
+  const symbol = node.getSymbol();
+  if (!symbol || symbol.getName() !== symbolIdentifier.symbolName) {
+    throw new AnalysisError({
+      code: ErrorCode.PARSE_ERROR,
+      message: `Symbol name mismatch. Expected '${
+        symbolIdentifier.symbolName
+      }', found '${symbol?.getName()}'`,
+      details: {
+        file: symbolIdentifier.filePath,
+        expected: symbolIdentifier.symbolName,
+        found: symbol?.getName(),
+      },
+    });
+  }
+
+  // Try to find the definition/declaration node
+  let declarationNode = node;
+  const declarations = symbol.getDeclarations();
+  if (declarations.length > 0) {
+    // Find the primary declaration (not just a reference)
+    const primaryDecl = declarations.find(decl => 
+      Node.isFunctionDeclaration(decl) ||
+      Node.isClassDeclaration(decl) ||
+      Node.isInterfaceDeclaration(decl) ||
+      Node.isTypeAliasDeclaration(decl) ||
+      Node.isEnumDeclaration(decl) ||
+      Node.isVariableDeclaration(decl) ||
+      Node.isMethodDeclaration(decl) ||
+      Node.isPropertyDeclaration(decl)
+    );
+    
+    if (primaryDecl) {
+      declarationNode = primaryDecl;
+    }
+  }
+
+  const symbolInfo = analyzeSymbolDeclaration(declarationNode, params.maxTypeLength);
+
+  if (!symbolInfo) {
+    throw new AnalysisError({
+      code: ErrorCode.PARSE_ERROR,
+      message: "Unable to analyze symbol declaration",
+      details: {
+        file: symbolIdentifier.filePath,
+        symbolName: symbolIdentifier.symbolName,
+      },
+    });
+  }
+
+  // Format output
+  const lines = [`## ${symbolInfo.name} (${symbolInfo.kind})`];
+  lines.push(`**Location:** \`${path.relative(process.cwd(), symbolInfo.location.file)}:${symbolInfo.location.position.line + 1}\``);
+  lines.push(`**Type:** \`${symbolInfo.type}\``);
+
+  if (symbolInfo.generics && symbolInfo.generics.length > 0) {
+    lines.push(`**Generics:** \`<${symbolInfo.generics.join(', ')}>\``);
+  }
+
+  if (symbolInfo.parameters && symbolInfo.parameters.length > 0) {
+    lines.push(`\n**Parameters:**`);
+    symbolInfo.parameters.forEach(param => {
+      const optional = param.optional ? "?" : "";
+      const defaultVal = param.defaultValue ? ` = ${param.defaultValue}` : "";
+      lines.push(`- \`${param.name}${optional}: ${param.type}${defaultVal}\``);
+    });
+  }
+
+  if (symbolInfo.returnType) {
+    lines.push(`\n**Returns:** \`${symbolInfo.returnType}\``);
+  }
+
+  if (symbolInfo.members && symbolInfo.members.length > 0) {
+    lines.push(`\n**Members (${symbolInfo.members.length}):**`);
+    symbolInfo.members.forEach(member => {
+      const visibility = member.visibility !== "public" ? `${member.visibility} ` : "";
+      const staticModifier = member.static ? "static " : "";
+      const optional = member.optional ? "?" : "";
+      lines.push(`- ${visibility}${staticModifier}\`${member.name}${optional}\`: \`${member.type}\` (${member.kind})`);
+    });
+  }
+
+  if (symbolInfo.signature && (symbolInfo.kind === "type" || symbolInfo.kind === "function")) {
+    lines.push(`\n**Full Signature:**`);
+    lines.push(`\`\`\`typescript\n${symbolInfo.signature}\n\`\`\``);
+  }
+
   return lines.join('\n');
 }
 

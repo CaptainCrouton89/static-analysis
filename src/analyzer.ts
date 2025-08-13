@@ -32,7 +32,11 @@ import {
   getNodeComplexity
 } from "./utils.js";
 
-export function extractSymbolInfo(node: Node, includePrivate: boolean = false): SymbolInfo | null {
+export function extractSymbolInfo(
+  node: Node, 
+  includePrivate: boolean = false, 
+  includeDefinition: boolean = false
+): SymbolInfo | null {
   const symbol = node.getSymbol();
   if (!symbol) return null;
   
@@ -58,6 +62,12 @@ export function extractSymbolInfo(node: Node, includePrivate: boolean = false): 
   ).join("\n");
   
   const location = nodeToLocation(node);
+  
+  let definition: { file: string; line: number } | undefined;
+  if (includeDefinition) {
+    definition = getSymbolDefinition(symbol);
+  }
+  
   return {
     name,
     kind,
@@ -68,7 +78,8 @@ export function extractSymbolInfo(node: Node, includePrivate: boolean = false): 
     },
     documentation: documentation || undefined,
     modifiers: modifiers.length > 0 ? modifiers : undefined,
-    relationships: extractRelationships(node)
+    relationships: extractRelationships(node),
+    definition
   };
 }
 
@@ -102,11 +113,56 @@ function extractRelationships(node: Node): SymbolInfo["relationships"] | undefin
   return Object.keys(relationships).length > 0 ? relationships : undefined;
 }
 
+function getSymbolDefinition(symbol: Symbol): { file: string; line: number } | undefined {
+  const declarations = symbol.getDeclarations();
+  if (declarations.length === 0) {
+    // Try to get the aliased symbol if this is an alias
+    const aliasedSymbol = symbol.getAliasedSymbol();
+    if (aliasedSymbol && aliasedSymbol !== symbol) {
+      return getSymbolDefinition(aliasedSymbol);
+    }
+    return undefined;
+  }
+  
+  // Sort declarations by preference
+  const sortedDeclarations = declarations.slice().sort((a, b) => {
+    const aFile = a.getSourceFile().getFilePath();
+    const bFile = b.getSourceFile().getFilePath();
+    
+    // 1. Prefer non-.d.ts files (actual source)
+    const aIsDts = aFile.endsWith('.d.ts');
+    const bIsDts = bFile.endsWith('.d.ts');
+    if (aIsDts !== bIsDts) {
+      return aIsDts ? 1 : -1;
+    }
+    
+    // 2. If both are .d.ts, prefer node_modules over @types
+    const aIsNodeModules = aFile.includes('node_modules') && !aFile.includes('node_modules/@types');
+    const bIsNodeModules = bFile.includes('node_modules') && !bFile.includes('node_modules/@types');
+    if (aIsNodeModules !== bIsNodeModules) {
+      return aIsNodeModules ? -1 : 1;
+    }
+    
+    // 3. Prefer shorter paths (closer to root)
+    return aFile.length - bFile.length;
+  });
+  
+  const primaryDeclaration = sortedDeclarations[0];
+  const sourceFile = primaryDeclaration.getSourceFile();
+  const startPos = sourceFile.getLineAndColumnAtPos(primaryDeclaration.getStart());
+  
+  return {
+    file: sourceFile.getFilePath(),
+    line: startPos.line - 1 // Convert to 0-based indexing
+  };
+}
+
 export function analyzeSourceFile(
   sourceFile: SourceFile,
   analysisType: "symbols" | "dependencies" | "all",
   depth: number = 2,
-  includePrivate: boolean = false
+  includePrivate: boolean = false,
+  includeDefinition: boolean = false
 ): {
   symbols: SymbolInfo[];
   diagnostics: Diagnostic[];
@@ -120,7 +176,7 @@ export function analyzeSourceFile(
   if (analysisType === "symbols" || analysisType === "all") {
     sourceFile.forEachDescendant(node => {
       if (isDeclarationNode(node)) {
-        const symbolInfo = extractSymbolInfo(node, includePrivate);
+        const symbolInfo = extractSymbolInfo(node, includePrivate, includeDefinition);
         if (symbolInfo) {
           symbols.push(symbolInfo);
         }

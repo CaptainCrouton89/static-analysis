@@ -28,6 +28,7 @@ export const analyzeFileSchema = z.object({
     .enum(["symbols", "dependencies", "all"])
     .optional()
     .default("all"),
+  includeDefinition: z.boolean().optional().default(false),
 });
 
 export const findReferencesSchema = z.object({
@@ -37,6 +38,7 @@ export const findReferencesSchema = z.object({
     character: z.number().optional(),
   }),
   includeDeclaration: z.boolean().optional().default(false),
+  includeDefinition: z.boolean().optional().default(false),
   scope: z.enum(["file", "project"]).optional().default("project"),
   maxResults: z.number().optional().default(100),
 });
@@ -47,6 +49,7 @@ export const findReferencesBySymbolSchema = z.object({
     symbolName: z.string(),
     line: z.number(),
   }),
+  includeDefinition: z.boolean().optional().default(false),
   maxResults: z.number().optional().default(100),
 });
 
@@ -64,21 +67,26 @@ export const getCompilationErrorsSchema = z.object({
 
 // Tool implementations
 export async function analyzeFile(params: z.infer<typeof analyzeFileSchema>) {
-  validatePath(params.filePath);
+  validatePath(params.filePath, params.includeDefinition);
   await checkMemoryUsage();
 
   const projectRoot = findProjectRoot(params.filePath);
-  const project = createProject(projectRoot);
+  const project = createProject(projectRoot, params.includeDefinition);
   const sourceFile = project.addSourceFileAtPath(params.filePath);
 
-  const result = analyzeSourceFile(sourceFile, params.analysisType, 1, false);
+  const result = analyzeSourceFile(sourceFile, params.analysisType, 1, false, params.includeDefinition);
 
   const lines = [`## ${path.relative(process.cwd(), params.filePath)}`];
   
   if (result.symbols.length > 0) {
     lines.push(`\n**Symbols (${result.symbols.length}):**`);
     result.symbols.forEach(sym => {
-      lines.push(`- \`${sym.name}\` (${sym.kind}) - line ${sym.location.line + 1}`);
+      let symbolLine = `- \`${sym.name}\` (${sym.kind}) - line ${sym.location.line + 1}`;
+      if (sym.definition && sym.definition.file !== sym.location.file) {
+        const relativePath = path.relative(process.cwd(), sym.definition.file);
+        symbolLine += ` → defined in \`${relativePath}:${sym.definition.line + 1}\``;
+      }
+      lines.push(symbolLine);
     });
   }
   
@@ -109,10 +117,10 @@ export async function analyzeFile(params: z.infer<typeof analyzeFileSchema>) {
 export async function findReferences(
   params: z.infer<typeof findReferencesSchema>
 ) {
-  validatePath(params.filePath);
+  validatePath(params.filePath, params.includeDefinition);
 
   const projectRoot = findProjectRoot(params.filePath);
-  const project = createProject(projectRoot);
+  const project = createProject(projectRoot, params.includeDefinition);
   const sourceFile = project.addSourceFileAtPath(params.filePath);
   
   let node: Node | undefined;
@@ -220,7 +228,7 @@ export async function findReferences(
     }
   }
 
-  const symbolInfo = extractSymbolInfo(node, false);
+  const symbolInfo = extractSymbolInfo(node, false, params.includeDefinition);
 
   const limitedReferences = references.slice(0, params.maxResults);
   
@@ -239,10 +247,10 @@ export async function findReferencesBySymbol(
   params: z.infer<typeof findReferencesBySymbolSchema>
 ) {
   const { symbolIdentifier } = params;
-  validatePath(symbolIdentifier.filePath);
+  validatePath(symbolIdentifier.filePath, params.includeDefinition);
 
   const projectRoot = findProjectRoot(symbolIdentifier.filePath);
-  const project = createProject(projectRoot);
+  const project = createProject(projectRoot, params.includeDefinition);
   const sourceFile = project.addSourceFileAtPath(symbolIdentifier.filePath);
 
   // Find the symbol by name at the specified line (convert to 0-based indexing)
@@ -334,7 +342,7 @@ export async function findReferencesBySymbol(
     });
   }
 
-  const symbolInfo = extractSymbolInfo(node, false);
+  const symbolInfo = extractSymbolInfo(node, false, params.includeDefinition);
 
   const limitedReferences = references.slice(0, params.maxResults);
   

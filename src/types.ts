@@ -49,6 +49,10 @@ export interface SymbolInfo {
     usedBy?: SymbolReference[];
     uses?: SymbolReference[];
   };
+  definition?: {
+    file: string;
+    line: number;
+  };
 }
 
 export interface Diagnostic {

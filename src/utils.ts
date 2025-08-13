@@ -84,29 +84,47 @@ export function findProjectRoot(filePath: string): string {
   return path.dirname(path.resolve(filePath));
 }
 
-export function createProject(rootPath?: string): Project {
+export function createProject(rootPath?: string, includeNodeModules: boolean = false): Project {
   const workingDir = rootPath || process.cwd();
   const tsConfigPath = path.join(workingDir, "tsconfig.json");
   
   // Check if tsconfig.json exists, if not create project without it
   const tsConfigExists = fs.existsSync(tsConfigPath);
   
+  const baseOptions: any = {
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    allowJs: true,
+    declaration: true,
+    esModuleInterop: true,
+    allowSyntheticDefaultImports: true,
+    strict: false, // Disable strict mode for better compatibility
+    skipLibCheck: true,
+    noEmit: true,
+    resolveJsonModule: true,
+    isolatedModules: true,
+    allowImportingTsExtensions: false,
+    noResolve: false
+  };
+
+  if (includeNodeModules) {
+    baseOptions.typeRoots = [
+      path.join(workingDir, "node_modules/@types"),
+      path.join(workingDir, "node_modules")
+    ];
+    baseOptions.baseUrl = workingDir;
+    baseOptions.paths = {
+      "*": ["node_modules/*", "node_modules/@types/*"]
+    };
+  }
+
   const project = new Project({
-    ...(tsConfigExists && { tsConfigFilePath: tsConfigPath }),
-    skipAddingFilesFromTsConfig: !tsConfigExists,
-    compilerOptions: {
-      target: ts.ScriptTarget.ES2022,
-      module: ts.ModuleKind.ESNext,
-      moduleResolution: ts.ModuleResolutionKind.NodeNext,
-      allowJs: true,
-      declaration: true,
-      esModuleInterop: true,
-      allowSyntheticDefaultImports: true,
-      strict: true,
-      incremental: true,
-      tsBuildInfoFile: path.join(cacheManager.getCacheDir() || ".mcp-cache", "tsconfig.tsbuildinfo")
-    },
-    useInMemoryFileSystem: false
+    ...(tsConfigExists && !includeNodeModules && { tsConfigFilePath: tsConfigPath }),
+    skipAddingFilesFromTsConfig: true,
+    compilerOptions: baseOptions,
+    useInMemoryFileSystem: false,
+    skipFileDependencyResolution: false
   });
   
   return project;
@@ -231,7 +249,7 @@ export function matchesScope(filePath: string, scope?: {
   return true;
 }
 
-export function validatePath(filePath: string): void {
+export function validatePath(filePath: string, allowNodeModules: boolean = false): void {
   const normalizedPath = path.normalize(filePath);
   const relativePath = path.relative(process.cwd(), normalizedPath);
   
@@ -244,6 +262,11 @@ export function validatePath(filePath: string): void {
   }
   
   for (const pattern of securityConfig.excludePatterns) {
+    // Skip node_modules exclusion if allowNodeModules is true
+    if (allowNodeModules && pattern.includes('node_modules')) {
+      continue;
+    }
+    
     if (minimatch(normalizedPath, pattern)) {
       throw new AnalysisError({
         code: ErrorCode.SCOPE_ERROR,

@@ -1,4 +1,4 @@
-import { Project, SourceFile, Node, SyntaxKind, Symbol, Type } from "ts-morph";
+import { Project, SourceFile, Node, SyntaxKind, Symbol, Type, ts } from "ts-morph";
 import { glob } from "glob";
 import { minimatch } from "minimatch";
 import path from "path";
@@ -55,17 +55,32 @@ export const securityConfig = {
 export function findProjectRoot(filePath: string): string {
   let currentDir = path.dirname(path.resolve(filePath));
   
-  // Look for tsconfig.json, package.json, or .git to determine project root
+  // First priority: look for tsconfig.json (closest to the file)
+  let tsConfigDir: string | null = null;
+  let tempDir = currentDir;
+  while (tempDir !== path.dirname(tempDir)) {
+    if (fs.existsSync(path.join(tempDir, 'tsconfig.json'))) {
+      tsConfigDir = tempDir;
+      break;
+    }
+    tempDir = path.dirname(tempDir);
+  }
+  
+  // If we found a tsconfig.json, use it
+  if (tsConfigDir) {
+    return tsConfigDir;
+  }
+  
+  // Fallback: look for package.json or .git
   while (currentDir !== path.dirname(currentDir)) {
-    if (fs.existsSync(path.join(currentDir, 'tsconfig.json')) || 
-        fs.existsSync(path.join(currentDir, 'package.json')) ||
+    if (fs.existsSync(path.join(currentDir, 'package.json')) ||
         fs.existsSync(path.join(currentDir, '.git'))) {
       return currentDir;
     }
     currentDir = path.dirname(currentDir);
   }
   
-  // Fallback to the directory containing the file
+  // Final fallback to the directory containing the file
   return path.dirname(path.resolve(filePath));
 }
 
@@ -73,19 +88,43 @@ export function createProject(rootPath?: string): Project {
   const workingDir = rootPath || process.cwd();
   const tsConfigPath = path.join(workingDir, "tsconfig.json");
   
+  // Check if tsconfig.json exists, if not create project without it
+  const tsConfigExists = fs.existsSync(tsConfigPath);
+  
   const project = new Project({
-    tsConfigFilePath: tsConfigPath,
-    skipAddingFilesFromTsConfig: false, // Allow tsconfig.json to control file inclusion
+    ...(tsConfigExists && { tsConfigFilePath: tsConfigPath }),
+    skipAddingFilesFromTsConfig: !tsConfigExists,
     compilerOptions: {
-      // Only add our custom options, let tsconfig.json handle the rest
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.NodeNext,
+      allowJs: true,
+      declaration: true,
+      esModuleInterop: true,
+      allowSyntheticDefaultImports: true,
+      strict: true,
       incremental: true,
       tsBuildInfoFile: path.join(cacheManager.getCacheDir() || ".mcp-cache", "tsconfig.tsbuildinfo")
     },
-    // Add error handling for missing tsconfig.json
     useInMemoryFileSystem: false
   });
   
   return project;
+}
+
+export function findClosestTsConfig(filePath: string): string | null {
+  let currentDir = path.dirname(path.resolve(filePath));
+  
+  // Walk up from the target path looking only for tsconfig.json
+  while (currentDir !== path.dirname(currentDir)) {
+    const tsConfigPath = path.join(currentDir, 'tsconfig.json');
+    if (fs.existsSync(tsConfigPath)) {
+      return currentDir;
+    }
+    currentDir = path.dirname(currentDir);
+  }
+  
+  return null;
 }
 
 export function nodeToLocation(node: Node): Location {

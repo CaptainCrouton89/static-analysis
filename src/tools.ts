@@ -12,6 +12,7 @@ import { AnalysisError, ErrorCode, Location } from "./types.js";
 import {
   checkMemoryUsage,
   createProject,
+  findClosestTsConfig,
   findFiles,
   findProjectRoot,
   nodeToLocation,
@@ -66,7 +67,8 @@ export async function analyzeFile(params: z.infer<typeof analyzeFileSchema>) {
   validatePath(params.filePath);
   await checkMemoryUsage();
 
-  const project = createProject();
+  const projectRoot = findProjectRoot(params.filePath);
+  const project = createProject(projectRoot);
   const sourceFile = project.addSourceFileAtPath(params.filePath);
 
   const result = analyzeSourceFile(sourceFile, params.analysisType, 1, false);
@@ -109,7 +111,8 @@ export async function findReferences(
 ) {
   validatePath(params.filePath);
 
-  const project = createProject();
+  const projectRoot = findProjectRoot(params.filePath);
+  const project = createProject(projectRoot);
   const sourceFile = project.addSourceFileAtPath(params.filePath);
   
   let node: Node | undefined;
@@ -238,7 +241,8 @@ export async function findReferencesBySymbol(
   const { symbolIdentifier } = params;
   validatePath(symbolIdentifier.filePath);
 
-  const project = createProject();
+  const projectRoot = findProjectRoot(symbolIdentifier.filePath);
+  const project = createProject(projectRoot);
   const sourceFile = project.addSourceFileAtPath(symbolIdentifier.filePath);
 
   // Find the symbol by name at the specified line (convert to 0-based indexing)
@@ -356,8 +360,9 @@ export async function getCompilationErrors(
   const isDirectory =
     fs.existsSync(params.path) && fs.statSync(params.path).isDirectory();
 
-  // Extract project root to use proper tsconfig.json
-  const projectRoot = findProjectRoot(params.path);
+  // Find the closest tsconfig.json to ensure proper configuration
+  const closestTsConfig = findClosestTsConfig(params.path);
+  const projectRoot = closestTsConfig || findProjectRoot(params.path);
   const project = createProject(projectRoot);
 
   let filesToAnalyze: string[] = [];

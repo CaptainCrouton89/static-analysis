@@ -69,6 +69,6 @@ For more detailed examples of MCP server implementations (including weather APIs
 
 ## Additional Notes
 
-When the user asks you to test a tool, it means they want you to use the mcp corresponding to the tool you were working on. You should use the mcp**mcp-name**tool-name to execute the tool.
+When the user asks you to test a tool, it means they want you to use the mcp corresponding to the tool you were working on. You should use the mcp\_\_mcp-name\_\_tool-name to execute the tool.
 
 If there is no change in output, it's likely because the CLI needs to be restarted.

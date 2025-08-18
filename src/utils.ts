@@ -86,10 +86,21 @@ export function findProjectRoot(filePath: string): string {
 
 export function createProject(rootPath?: string, includeNodeModules: boolean = false): Project {
   const workingDir = rootPath || process.cwd();
-  const tsConfigPath = path.join(workingDir, "tsconfig.json");
   
-  // Check if tsconfig.json exists, if not create project without it
+  // Find the closest tsconfig.json to the working directory
+  const closestTsConfigDir = findClosestTsConfig(workingDir);
+  const tsConfigPath = closestTsConfigDir ? path.join(closestTsConfigDir, "tsconfig.json") : path.join(workingDir, "tsconfig.json");
   const tsConfigExists = fs.existsSync(tsConfigPath);
+  
+  let userTsConfig: any = {};
+  if (tsConfigExists) {
+    try {
+      const tsConfigContent = fs.readFileSync(tsConfigPath, 'utf8');
+      userTsConfig = JSON.parse(tsConfigContent).compilerOptions || {};
+    } catch (error) {
+      console.error(`Error reading tsconfig.json: ${error}`);
+    }
+  }
   
   const baseOptions: any = {
     target: ts.ScriptTarget.ES2022,
@@ -105,15 +116,18 @@ export function createProject(rootPath?: string, includeNodeModules: boolean = f
     resolveJsonModule: true,
     isolatedModules: true,
     allowImportingTsExtensions: false,
-    noResolve: false
+    noResolve: false,
+    // Respect user's tsconfig settings
+    ...userTsConfig
   };
 
   if (includeNodeModules) {
+    const projectRoot = closestTsConfigDir || workingDir;
     baseOptions.typeRoots = [
-      path.join(workingDir, "node_modules/@types"),
-      path.join(workingDir, "node_modules")
+      path.join(projectRoot, "node_modules/@types"),
+      path.join(projectRoot, "node_modules")
     ];
-    baseOptions.baseUrl = workingDir;
+    baseOptions.baseUrl = projectRoot;
     baseOptions.paths = {
       "*": ["node_modules/*", "node_modules/@types/*"]
     };

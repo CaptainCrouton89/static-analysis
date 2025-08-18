@@ -556,6 +556,18 @@ export async function getCompilationErrors(
 
           const filteredDiagnostics = allDiagnostics.filter((diag) => {
             const severity = getDiagnosticSeverity(diag.getCategory());
+            
+            // Check if this diagnostic should be skipped based on skipLibCheck
+            const diagFile = diag.getSourceFile();
+            const shouldSkip = project.getCompilerOptions().skipLibCheck && 
+              diagFile && (
+                diagFile.getFilePath().includes('node_modules') ||
+                diagFile.getFilePath().endsWith('.d.ts') ||
+                diagFile.isDeclarationFile()
+              );
+            
+            if (shouldSkip) return false;
+            
             if (severity === "error") return true;
             if (severity === "warning" && params.includeWarnings) return true;
             if (severity === "info" && params.includeInfo) return true;

@@ -134,9 +134,11 @@ export function createProject(rootPath?: string, includeNodeModules: boolean = f
   }
 
   const project = new Project({
-    ...(tsConfigExists && !includeNodeModules && { tsConfigFilePath: tsConfigPath }),
+    ...(tsConfigExists && !includeNodeModules 
+      ? { tsConfigFilePath: tsConfigPath }
+      : { compilerOptions: baseOptions }
+    ),
     skipAddingFilesFromTsConfig: true,
-    compilerOptions: baseOptions,
     useInMemoryFileSystem: false,
     skipFileDependencyResolution: false
   });

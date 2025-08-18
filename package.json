@@ -1,6 +1,6 @@
 {
   "name": "@r-mcp/static-analysis",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "MCP server for TypeScript code analysis using ts-morph",
   "main": "dist/index.js",
   "type": "module",

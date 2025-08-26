@@ -1,17 +1,13 @@
 # MCP TypeScript Analyzer
 
-A Model Context Protocol (MCP) server for comprehensive TypeScript code analysis using ts-morph. This server provides advanced static analysis capabilities for TypeScript codebases, including symbol extraction, dependency analysis, code quality detection, and pattern matching.
+A Model Context Protocol (MCP) server for TypeScript static code analysis using ts-morph. This tool provides deep code analysis capabilities for understanding TypeScript codebases.
 
 ## Features
 
-- **File Analysis**: Comprehensive analysis of TypeScript files with configurable depth and detail
-- **Symbol Search**: Semantic symbol search across codebases with scoring and filtering
-- **Pattern Matching**: AST-based, semantic, and regex pattern detection
-- **Code Quality**: Automated detection of code smells and complexity issues
-- **Reference Tracking**: Find all references to symbols with context
-- **Dependency Analysis**: Import/export dependency graph generation
-- **Context Extraction**: AI-friendly context extraction for code understanding
-- **Codebase Summarization**: High-level architectural analysis and metrics
+- **File Analysis**: Extract symbols, imports, and exports from TypeScript files
+- **Symbol Analysis**: Get detailed information about functions, classes, interfaces, and types
+- **Reference Finding**: Track all usages of a symbol across your codebase
+- **Compilation Errors**: Get TypeScript compilation diagnostics without building
 
 ## Installation
 
@@ -37,158 +33,115 @@ A Model Context Protocol (MCP) server for comprehensive TypeScript code analysis
 
 ### 1. `analyze_file`
 
-Analyzes a single TypeScript file with configurable depth and detail.
+Quickly analyze a TypeScript file to extract all symbols, imports, and exports.
 
 **Parameters:**
 
-- `filePath` (string): Path to the TypeScript file
-- `analysisType` (enum): Type of analysis - "symbols", "dependencies", "complexity", "all"
-- `depth` (number): Analysis depth (1-3, default: 2)
-- `includePrivate` (boolean): Include private members (default: false)
-- `outputFormat` (enum): Output format - "summary", "detailed", "full" (default: "summary")
+- `filePath` (string, required): Path to the TypeScript file
+- `analysisType` (enum): "symbols", "dependencies", or "all" (default: "all")
+- `includeDefinition` (boolean): Include symbol definition locations (default: false)
 
-### 2. `search_symbols`
+### 2. `analyze_symbol`
 
-Search for symbols across the codebase using various strategies.
+Get detailed analysis of a specific symbol including parameters, return types, and members.
 
 **Parameters:**
 
-- `query` (string): Search query
-- `searchType` (enum): Search type - "text", "semantic", "ast-pattern"
-- `symbolTypes` (array): Filter by symbol types (class, interface, function, etc.)
-- `maxResults` (number): Maximum results to return (default: 50)
-- `includeReferences` (boolean): Include reference information (default: false)
+- `symbolIdentifier` (object, required):
+  - `filePath` (string): Path to the file
+  - `symbolName` (string): Name of the symbol
+  - `line` (number): Line number where symbol appears (1-based)
+- `maxTypeLength` (number): Maximum type string length (default: unlimited)
 
-### 3. `get_symbol_info`
+### 3. `find_references`
 
-Get detailed information about a specific symbol at a given position.
+Find all references to a symbol across the codebase for understanding usage patterns.
 
 **Parameters:**
 
-- `filePath` (string): Path to the file
-- `position` (object): Line and character position
-- `includeRelationships` (boolean): Include type relationships (default: true)
-- `includeUsages` (boolean): Include usage information (default: false)
-- `depth` (number): Analysis depth (default: 2)
+- `symbolIdentifier` (object, required):
+  - `filePath` (string): Path to the file
+  - `symbolName` (string): Name of the symbol
+  - `line` (number): Line number where symbol appears (1-based)
+- `maxResults` (number): Maximum references to return (default: 100)
 
-## Advanced Features
+### 4. `get_compilation_errors`
 
-### Caching System
+Get TypeScript compilation errors without building the project.
 
-The server includes an intelligent caching system that:
+**Parameters:**
 
-- Caches parsed TypeScript files and analysis results
-- Adapts caching strategy based on project size
-- Provides significant performance improvements for repeated operations
+- `path` (string, required): File or directory path to analyze
+- `includeWarnings` (boolean): Include warnings (default: true)
+- `includeInfo` (boolean): Include info messages (default: false)
+- `filePattern` (string): Glob pattern for files (default: "**/*.{ts,tsx}")
+- `maxFiles` (number): Maximum files to analyze (default: 25)
+- `verbosity` (enum): "minimal", "normal", or "detailed" (default: "normal")
 
-### Performance Optimization
+## Performance Features
 
-- Parallel processing for multi-file operations
-- Configurable timeouts and memory monitoring
-- Adaptive algorithms based on codebase size
-
-### Error Handling
-
-- Comprehensive error reporting with detailed context
-- Graceful degradation for partially corrupt files
-- Structured error codes for programmatic handling
+- **Intelligent Caching**: Automatically caches parsed files for faster analysis
+- **Parallel Processing**: Handles multiple files concurrently
+- **Memory Management**: Built-in memory monitoring to prevent crashes
+- **Error Recovery**: Graceful handling of TypeScript errors and invalid files
 
 ## Configuration
 
-### Environment Variables
-
-Create a `.env.local` file to configure the server:
-
-```env
-# Optional: Set custom timeout values
-ANALYSIS_TIMEOUT=30000
-MEMORY_LIMIT=1000000000
-
-# Optional: Configure caching
-CACHE_SIZE=1000
-CACHE_TTL=3600000
-```
-
-### TypeScript Configuration
-
-The server automatically detects and uses your project's `tsconfig.json` file for accurate type analysis.
+The server automatically detects and uses your project's `tsconfig.json` file for accurate type analysis. No additional configuration is required.
 
 ## Usage Examples
 
-### Basic File Analysis
+### Analyze a TypeScript file
 
-```json
-{
-  "tool": "analyze_file",
-  "params": {
-    "filePath": "./src/index.ts",
-    "analysisType": "all",
-    "outputFormat": "detailed"
-  }
-}
+```typescript
+// Analyze src/index.ts
+await mcp.analyze_file({
+  filePath: "./src/index.ts",
+  analysisType: "all"
+})
 ```
 
-### Symbol Search
+### Get detailed symbol information
 
-```json
-{
-  "tool": "search_symbols",
-  "params": {
-    "query": "UserService",
-    "searchType": "semantic",
-    "symbolTypes": ["class", "interface"]
+```typescript
+// Get details about a UserService class on line 25
+await mcp.analyze_symbol({
+  symbolIdentifier: {
+    filePath: "./src/services/user.ts",
+    symbolName: "UserService",
+    line: 25
   }
-}
+})
 ```
 
-### Pattern Detection
+### Find all references to a symbol
 
-```json
-{
-  "tool": "find_patterns",
-  "params": {
-    "pattern": "console.log",
-    "patternType": "ast"
+```typescript
+// Find where getUserById is used
+await mcp.find_references({
+  symbolIdentifier: {
+    filePath: "./src/api/users.ts",
+    symbolName: "getUserById",
+    line: 42
   }
-}
+})
 ```
 
-### Code Quality Analysis
+### Check for TypeScript errors
 
-```json
-{
-  "tool": "detect_code_smells",
-  "params": {
-    "categories": ["complexity", "naming", "unused-code"],
-    "threshold": {
-      "complexity": 15,
-      "functionSize": 100
-    }
-  }
-}
+```typescript
+// Check entire src directory for errors
+await mcp.get_compilation_errors({
+  path: "./src",
+  verbosity: "normal"
+})
 ```
-
-## Architecture
-
-The server is built with a modular architecture:
-
-- **`src/index.ts`**: MCP server setup and tool registration
-- **`src/tools.ts`**: Tool implementations and schemas
-- **`src/analyzer.ts`**: Core TypeScript analysis engine
-- **`src/utils.ts`**: Utility functions and project management
-- **`src/cache.ts`**: Intelligent caching system
-- **`src/types.ts`**: TypeScript type definitions
-
-## Testing
-
-See `TEST_RESULTS.md` for detailed test results and examples of all tool outputs.
-
-## License
-
-MIT License - see LICENSE file for details.
 
 ## Requirements
 
 - Node.js 18+
-- TypeScript 5.0+
-- A TypeScript project with valid `tsconfig.json`
+- TypeScript project with `tsconfig.json`
+
+## License
+
+MIT

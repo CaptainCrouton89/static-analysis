@@ -11,23 +11,49 @@ A Model Context Protocol (MCP) server for TypeScript static code analysis using 
 
 ## Installation
 
-1. **Build the server**:
+### Prerequisites
 
-   ```bash
-   npm run build
-   ```
+```bash
+npm install  # Install dependencies
+npm run build  # Build the TypeScript project
+```
 
-2. **Install to MCP clients**:
+### Installation Methods
 
-   ```bash
-   # Install to all supported clients
-   npm run install-server
+The server can be installed to multiple MCP-compatible clients. Each installation method configures the client to use the published npm package (`@r-mcp/static-analysis`), ensuring you always get the latest version.
 
-   # Install to specific clients
-   npm run install-cursor    # Cursor IDE
-   npm run install-desktop   # Claude Desktop
-   npm run install-code      # Claude Code CLI
-   ```
+#### Install to All Clients
+
+```bash
+npm run install-server  # Installs to all supported clients
+```
+
+#### Install to Specific Clients
+
+```bash
+# Production Clients (using npm package)
+npm run install-cursor    # Cursor IDE (~/.cursor/mcp.json)
+npm run install-desktop   # Claude Desktop (~/Library/Application Support/Claude/claude_desktop_config.json)
+npm run install-code      # Claude Code CLI (~/.claude/mcp.json)
+
+# Development/Testing
+npm run install-mcp       # Local development (.mcp.json in project root)
+```
+
+### How It Works
+
+The installation scripts automatically:
+1. Build the TypeScript project
+2. Configure the client to use `npx -y @r-mcp/static-analysis@latest`
+3. Include any environment variables from `.env.local` if present
+4. Update the client's MCP configuration file
+
+### After Installation
+
+- **Cursor IDE**: Restart or refresh MCP settings
+- **Claude Desktop**: Restart the application
+- **Claude Code**: Restart the CLI with the new configuration
+- **Local Development**: The `.mcp.json` file is created for testing
 
 ## Available Tools
 
@@ -136,6 +162,18 @@ await mcp.get_compilation_errors({
   verbosity: "normal"
 })
 ```
+
+## Development
+
+### Publishing Updates
+
+To release a new version to npm:
+
+```bash
+npm run release  # Builds, commits, and publishes to npm
+```
+
+This command handles the complete release process including version bumping, git operations, and npm publishing.
 
 ## Requirements
 

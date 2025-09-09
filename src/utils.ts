@@ -87,21 +87,7 @@ export function findProjectRoot(filePath: string): string {
 export function createProject(rootPath?: string, includeNodeModules: boolean = false): Project {
   const workingDir = rootPath || process.cwd();
   
-  // Find the closest tsconfig.json to the working directory
-  const closestTsConfigDir = findClosestTsConfig(workingDir);
-  const tsConfigPath = closestTsConfigDir ? path.join(closestTsConfigDir, "tsconfig.json") : path.join(workingDir, "tsconfig.json");
-  const tsConfigExists = fs.existsSync(tsConfigPath);
-  
-  let userTsConfig: any = {};
-  if (tsConfigExists) {
-    try {
-      const tsConfigContent = fs.readFileSync(tsConfigPath, 'utf8');
-      userTsConfig = JSON.parse(tsConfigContent).compilerOptions || {};
-    } catch (error) {
-      console.error(`Error reading tsconfig.json: ${error}`);
-    }
-  }
-  
+  // Always use default compiler options to avoid tsconfig parsing issues
   const baseOptions: any = {
     target: ts.ScriptTarget.ES2022,
     module: ts.ModuleKind.ESNext,
@@ -117,12 +103,11 @@ export function createProject(rootPath?: string, includeNodeModules: boolean = f
     isolatedModules: true,
     allowImportingTsExtensions: false,
     noResolve: false,
-    // Respect user's tsconfig settings
-    ...userTsConfig
+    jsx: ts.JsxEmit.ReactJSX,
   };
 
   if (includeNodeModules) {
-    const projectRoot = closestTsConfigDir || workingDir;
+    const projectRoot = workingDir;
     baseOptions.typeRoots = [
       path.join(projectRoot, "node_modules/@types"),
       path.join(projectRoot, "node_modules")
@@ -134,10 +119,7 @@ export function createProject(rootPath?: string, includeNodeModules: boolean = f
   }
 
   const project = new Project({
-    ...(tsConfigExists && !includeNodeModules 
-      ? { tsConfigFilePath: tsConfigPath }
-      : { compilerOptions: baseOptions }
-    ),
+    compilerOptions: baseOptions,
     skipAddingFilesFromTsConfig: true,
     useInMemoryFileSystem: false,
     skipFileDependencyResolution: false
@@ -266,31 +248,8 @@ export function matchesScope(filePath: string, scope?: {
 }
 
 export function validatePath(filePath: string, allowNodeModules: boolean = false): void {
-  const normalizedPath = path.normalize(filePath);
-  const relativePath = path.relative(process.cwd(), normalizedPath);
-  
-  if (relativePath.startsWith('..')) {
-    throw new AnalysisError({
-      code: ErrorCode.SCOPE_ERROR,
-      message: "Path is outside allowed scope",
-      details: { file: filePath }
-    });
-  }
-  
-  for (const pattern of securityConfig.excludePatterns) {
-    // Skip node_modules exclusion if allowNodeModules is true
-    if (allowNodeModules && pattern.includes('node_modules')) {
-      continue;
-    }
-    
-    if (minimatch(normalizedPath, pattern)) {
-      throw new AnalysisError({
-        code: ErrorCode.SCOPE_ERROR,
-        message: "Path matches excluded pattern",
-        details: { file: filePath }
-      });
-    }
-  }
+  // Path validation removed - allow analyzing files from any location
+  return;
 }
 
 export function getNodeComplexity(node: Node): number {

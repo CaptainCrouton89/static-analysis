@@ -268,7 +268,7 @@ export async function findReferencesBySymbol(
   if (symbolIndex === -1) {
     throw new AnalysisError({
       code: ErrorCode.FILE_NOT_FOUND,
-      message: `Symbol '${symbolIdentifier.symbolName}' not found at line ${symbolIdentifier.line}`,
+      message: `Symbol '${symbolIdentifier.symbolName}' not found at line ${symbolIdentifier.line}. Use 'analyze_file' first to find the correct line number for this symbol.`,
       details: {
         file: symbolIdentifier.filePath,
         symbolName: symbolIdentifier.symbolName,
@@ -383,7 +383,7 @@ export async function analyzeSymbol(
   if (symbolIndex === -1) {
     throw new AnalysisError({
       code: ErrorCode.FILE_NOT_FOUND,
-      message: `Symbol '${symbolIdentifier.symbolName}' not found at line ${symbolIdentifier.line}`,
+      message: `Symbol '${symbolIdentifier.symbolName}' not found at line ${symbolIdentifier.line}. Use 'analyze_file' first to find the correct line number for this symbol.`,
       details: {
         file: symbolIdentifier.filePath,
         symbolName: symbolIdentifier.symbolName,

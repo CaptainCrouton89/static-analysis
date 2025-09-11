@@ -4,7 +4,10 @@
       "command": "node",
       "args": [
         "/Users/silasrhyneer/Code/MCP/static-analysis/dist/index.js"
-      ]
+      ],
+      "env": {
+        "ENABLED_TOOLS": "get_file_tree"
+      }
     }
   }
 }

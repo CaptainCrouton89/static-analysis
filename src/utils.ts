@@ -87,7 +87,28 @@ export function findProjectRoot(filePath: string): string {
 export function createProject(rootPath?: string, includeNodeModules: boolean = false): Project {
   const workingDir = rootPath || process.cwd();
   
-  // Always use default compiler options to avoid tsconfig parsing issues
+  // Check if there's a tsconfig.json file
+  const tsConfigPath = path.join(workingDir, 'tsconfig.json');
+  const hasTsConfig = fs.existsSync(tsConfigPath);
+  
+  // If we have a tsconfig and we're not doing symbol analysis (includeNodeModules), use it
+  if (hasTsConfig && !includeNodeModules) {
+    try {
+      const project = new Project({
+        tsConfigFilePath: tsConfigPath,
+        skipAddingFilesFromTsConfig: true,
+        useInMemoryFileSystem: false,
+        skipFileDependencyResolution: false
+      });
+      
+      return project;
+    } catch (error) {
+      // If tsconfig parsing fails, fall back to default options
+      console.error('Failed to parse tsconfig.json, using defaults:', error);
+    }
+  }
+  
+  // Use default compiler options for symbol analysis or when tsconfig is not available
   const baseOptions: any = {
     target: ts.ScriptTarget.ES2022,
     module: ts.ModuleKind.ESNext,

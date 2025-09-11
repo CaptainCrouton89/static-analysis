@@ -378,7 +378,28 @@ export async function analyzeSymbol(
 
   // Find the symbol by name at the specified line (convert to 0-based indexing)
   const line = sourceFile.getFullText().split("\n")[symbolIdentifier.line - 1];
-  const symbolIndex = line.indexOf(symbolIdentifier.symbolName);
+  let symbolIndex = line.indexOf(symbolIdentifier.symbolName);
+
+  // If not found directly, try to find it as part of a qualified name (e.g., Stripe.Subscription)
+  if (symbolIndex === -1) {
+    // Look for the symbol name preceded by a dot or followed by various TypeScript syntax
+    const patterns = [
+      `.${symbolIdentifier.symbolName}`,  // e.g., Stripe.Subscription
+      `<${symbolIdentifier.symbolName}`,  // e.g., Array<Subscription>
+      ` ${symbolIdentifier.symbolName}`,  // e.g., implements Subscription
+      `:${symbolIdentifier.symbolName}`,  // e.g., extends :Subscription
+      `(${symbolIdentifier.symbolName}`,  // e.g., new (Subscription)
+    ];
+    
+    for (const pattern of patterns) {
+      const idx = line.indexOf(pattern);
+      if (idx !== -1) {
+        // Adjust index to point to the actual symbol name
+        symbolIndex = idx + pattern.length - symbolIdentifier.symbolName.length;
+        break;
+      }
+    }
+  }
 
   if (symbolIndex === -1) {
     throw new AnalysisError({
@@ -407,17 +428,43 @@ export async function analyzeSymbol(
     });
   }
 
-  const symbol = node.getSymbol();
-  if (!symbol || symbol.getName() !== symbolIdentifier.symbolName) {
+  // For type references, try to get the actual type symbol
+  let symbol = node.getSymbol();
+  
+  // If we're looking at a type reference (e.g., Stripe.Subscription), navigate to the actual type
+  if (Node.isTypeReference(node)) {
+    const typeSymbol = node.getType().getSymbol();
+    if (typeSymbol) {
+      symbol = typeSymbol;
+    }
+  } else if (Node.isIdentifier(node) || Node.isQualifiedName(node)) {
+    // Try to get the type of the identifier
+    const type = node.getType();
+    const typeSymbol = type.getSymbol();
+    if (typeSymbol && (typeSymbol.getName() === symbolIdentifier.symbolName || 
+                       typeSymbol.getName().endsWith(`.${symbolIdentifier.symbolName}`))) {
+      symbol = typeSymbol;
+    }
+  }
+  
+  // If symbol doesn't match but we have a qualified name, try to resolve it
+  if (symbol && symbol.getName() !== symbolIdentifier.symbolName) {
+    // Check if this is a namespace access (e.g., clicking on Subscription in Stripe.Subscription)
+    const type = node.getType();
+    const typeSymbol = type.getSymbol();
+    if (typeSymbol && typeSymbol.getName() === symbolIdentifier.symbolName) {
+      symbol = typeSymbol;
+    }
+  }
+
+  if (!symbol) {
     throw new AnalysisError({
       code: ErrorCode.PARSE_ERROR,
-      message: `Symbol name mismatch. Expected '${
-        symbolIdentifier.symbolName
-      }', found '${symbol?.getName()}'`,
+      message: `Unable to resolve symbol '${symbolIdentifier.symbolName}'`,
       details: {
         file: symbolIdentifier.filePath,
-        expected: symbolIdentifier.symbolName,
-        found: symbol?.getName(),
+        symbolName: symbolIdentifier.symbolName,
+        line: symbolIdentifier.line,
       },
     });
   }

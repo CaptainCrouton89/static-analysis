@@ -2,15 +2,15 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
+import { 
+  getCompilationErrors, 
+  getCompilationErrorsSchema,
   analyzeFile,
   analyzeFileSchema,
+  findReferences,
+  findReferencesSchema,
   analyzeSymbol,
-  analyzeSymbolSchema,
-  findReferencesBySymbol,
-  findReferencesBySymbolSchema,
-  getCompilationErrors,
-  getCompilationErrorsSchema,
+  analyzeSymbolSchema
 } from "./tools.js";
 
 // Create the MCP server
@@ -20,7 +20,6 @@ const server = new McpServer({
   description: "TypeScript code analysis MCP server using ts-morph",
 });
 
-// Register tools
 server.tool(
   "analyze_file",
   "Analyze a single TypeScript and get all symbols, imports, and exports. The best way to quickly understand a file using minimal context.",
@@ -33,10 +32,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text:
-              typeof result === "string"
-                ? result
-                : JSON.stringify(result, null, 2),
+            text: result,
           },
         ],
       };
@@ -91,11 +87,11 @@ server.tool(
 server.tool(
   "find_references",
   "Find all references to a symbol using stable symbol identifier. Use this for perfect accuracy when searching for usage, imports, and declarations of a symbol. This is the most accurate way to find references to a symbol and understand its usage across the codebase.",
-  findReferencesBySymbolSchema._def.shape(),
+  findReferencesSchema._def.shape(),
   async (params) => {
     try {
-      const validated = findReferencesBySymbolSchema.parse(params);
-      const result = await findReferencesBySymbol(validated);
+      const validated = findReferencesSchema.parse(params);
+      const result = await findReferences(validated);
       return {
         content: [
           {
